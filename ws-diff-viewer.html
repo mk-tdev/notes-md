@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WS Diff Viewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d0f12;
+    --bg2: #13161b;
+    --bg3: #1a1e25;
+    --bg4: #222730;
+    --border: #2a2f3a;
+    --border2: #363d4a;
+    --text: #e2e8f0;
+    --text2: #8892a4;
+    --text3: #4a5568;
+    --green: #34d399;
+    --green-dim: rgba(52,211,153,0.12);
+    --red: #f87171;
+    --red-dim: rgba(248,113,113,0.12);
+    --amber: #fbbf24;
+    --amber-dim: rgba(251,191,36,0.12);
+    --blue: #60a5fa;
+    --blue-dim: rgba(96,165,250,0.1);
+    --purple: #a78bfa;
+    --cyan: #22d3ee;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+    --radius: 6px;
+  }
+
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; overflow: hidden; }
+
+  /* Layout */
+  .layout { display: grid; grid-template-rows: 48px 1fr; height: 100vh; }
+  .topbar { display: flex; align-items: center; gap: 12px; padding: 0 16px; background: var(--bg2); border-bottom: 1px solid var(--border); }
+  .content { display: grid; grid-template-columns: 280px 1fr; overflow: hidden; }
+  .sidebar { background: var(--bg2); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+  .main { display: flex; flex-direction: column; overflow: hidden; }
+
+  /* Topbar */
+  .logo { font-family: var(--mono); font-size: 13px; font-weight: 500; color: var(--text); letter-spacing: 0.05em; }
+  .logo span { color: var(--cyan); }
+  .conn-form { display: flex; align-items: center; gap: 8px; flex: 1; max-width: 480px; margin: 0 auto; }
+  .conn-input { flex: 1; background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius); padding: 5px 10px; font-family: var(--mono); font-size: 12px; color: var(--text); outline: none; transition: border-color .15s; }
+  .conn-input:focus { border-color: var(--cyan); }
+  .conn-input::placeholder { color: var(--text3); }
+  .btn { font-family: var(--sans); font-size: 12px; font-weight: 500; padding: 5px 14px; border-radius: var(--radius); border: 1px solid var(--border2); background: var(--bg3); color: var(--text); cursor: pointer; transition: all .15s; white-space: nowrap; }
+  .btn:hover { background: var(--bg4); border-color: var(--border2); }
+  .btn.primary { background: var(--cyan); border-color: var(--cyan); color: #000; }
+  .btn.primary:hover { opacity: .85; }
+  .btn.danger { background: var(--red-dim); border-color: var(--red); color: var(--red); }
+  .btn.danger:hover { background: rgba(248,113,113,.2); }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text3); flex-shrink: 0; transition: background .3s; }
+  .status-dot.connected { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .status-dot.connecting { background: var(--amber); animation: pulse 1s infinite; }
+  .status-dot.error { background: var(--red); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+  .status-label { font-size: 11px; color: var(--text2); font-family: var(--mono); }
+
+  /* Sidebar */
+  .sidebar-header { padding: 10px 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+  .sidebar-title { font-size: 11px; font-weight: 500; color: var(--text2); letter-spacing: .08em; text-transform: uppercase; }
+  .badge-count { font-size: 10px; font-family: var(--mono); background: var(--bg4); border: 1px solid var(--border); color: var(--text2); padding: 1px 6px; border-radius: 10px; }
+
+  .history-list { flex: 1; overflow-y: auto; }
+  .history-list::-webkit-scrollbar { width: 4px; }
+  .history-list::-webkit-scrollbar-track { background: transparent; }
+  .history-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+  .history-item { padding: 9px 12px; cursor: pointer; border-bottom: 1px solid var(--border); transition: background .1s; position: relative; }
+  .history-item:hover { background: var(--bg3); }
+  .history-item.active { background: var(--bg3); }
+  .history-item.active::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--cyan); }
+  .hist-row { display: flex; align-items: center; justify-content: space-between; }
+  .hist-num { font-family: var(--mono); font-size: 11px; color: var(--text3); }
+  .hist-time { font-family: var(--mono); font-size: 10px; color: var(--text3); }
+  .hist-chips { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+  .chip { font-size: 10px; font-family: var(--mono); padding: 1px 6px; border-radius: 3px; }
+  .chip.a { background: var(--green-dim); color: var(--green); }
+  .chip.r { background: var(--red-dim); color: var(--red); }
+  .chip.c { background: var(--amber-dim); color: var(--amber); }
+  .hist-summary { font-size: 11px; color: var(--text2); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .sidebar-footer { padding: 10px 12px; border-top: 1px solid var(--border); flex-shrink: 0; }
+  .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .stat-cell { background: var(--bg3); border-radius: var(--radius); padding: 6px 10px; }
+  .stat-cell .lbl { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: .06em; }
+  .stat-cell .val { font-family: var(--mono); font-size: 15px; font-weight: 500; margin-top: 1px; }
+  .val.green { color: var(--green); }
+  .val.red { color: var(--red); }
+  .val.amber { color: var(--amber); }
+  .val.blue { color: var(--blue); }
+
+  /* Main area */
+  .main-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .mtab { font-size: 12px; font-family: var(--sans); font-weight: 500; padding: 10px 18px; border: none; background: transparent; color: var(--text2); cursor: pointer; border-bottom: 2px solid transparent; transition: all .15s; letter-spacing: .02em; }
+  .mtab:hover { color: var(--text); }
+  .mtab.active { color: var(--cyan); border-bottom-color: var(--cyan); }
+
+  .tab-content { display: none; flex: 1; overflow: hidden; }
+  .tab-content.active { display: flex; flex-direction: column; }
+
+  /* Changes tab */
+  .changes-view { flex: 1; overflow-y: auto; padding: 12px; }
+  .changes-view::-webkit-scrollbar { width: 4px; }
+  .changes-view::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+  .section-label { font-size: 10px; font-weight: 500; color: var(--text3); letter-spacing: .1em; text-transform: uppercase; margin: 10px 0 5px; padding-left: 2px; }
+  .section-label:first-child { margin-top: 0; }
+  .change-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: var(--radius); margin-bottom: 3px; font-family: var(--mono); font-size: 12px; transition: background .1s; }
+  .change-row:hover { background: var(--bg3); }
+  .change-row.c { border-left: 2px solid var(--amber); background: var(--amber-dim); }
+  .change-row.a { border-left: 2px solid var(--green); background: var(--green-dim); }
+  .change-row.r { border-left: 2px solid var(--red); background: var(--red-dim); }
+  .cr-key { color: var(--blue); min-width: 140px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cr-old { color: var(--red); text-decoration: line-through; opacity: .7; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cr-arr { color: var(--text3); flex-shrink: 0; }
+  .cr-new { color: var(--green); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cr-val { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cr-val.g { color: var(--green); }
+  .cr-val.r { color: var(--red); }
+
+  /* Diff tab */
+  .diff-panels { display: grid; grid-template-columns: 1fr 1fr; flex: 1; overflow: hidden; gap: 0; }
+  .diff-panel { display: flex; flex-direction: column; overflow: hidden; border-right: 1px solid var(--border); }
+  .diff-panel:last-child { border-right: none; }
+  .diff-panel-hdr { font-size: 10px; font-weight: 500; color: var(--text2); letter-spacing: .08em; text-transform: uppercase; padding: 8px 14px; background: var(--bg2); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .diff-scroll { flex: 1; overflow-y: auto; padding: 8px 0; font-family: var(--mono); font-size: 12px; line-height: 1.7; }
+  .diff-scroll::-webkit-scrollbar { width: 4px; }
+  .diff-scroll::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+  .dl { display: flex; padding: 0 14px; white-space: pre; min-height: 22px; }
+  .dl.dc { background: var(--amber-dim); border-left: 2px solid var(--amber); }
+  .dl.da { background: var(--green-dim); border-left: 2px solid var(--green); }
+  .dl.dr { background: var(--red-dim); border-left: 2px solid var(--red); }
+  .dl .sgn { width: 14px; flex-shrink: 0; color: var(--text3); }
+  .dl.dc .sgn { color: var(--amber); }
+  .dl.da .sgn { color: var(--green); }
+  .dl.dr .sgn { color: var(--red); }
+  .jk { color: var(--blue); }
+  .js { color: var(--green); }
+  .jn { color: var(--amber); }
+  .jb { color: var(--purple); }
+  .jnu { color: var(--text3); }
+  .jp { color: var(--text3); }
+
+  /* Raw tab */
+  .raw-view { flex: 1; overflow: auto; padding: 12px; font-family: var(--mono); font-size: 12px; line-height: 1.7; color: var(--text2); white-space: pre; }
+  .raw-view::-webkit-scrollbar { width: 4px; }
+  .raw-view::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+
+  /* Log tab */
+  .log-view { flex: 1; overflow: auto; padding: 8px 12px; }
+  .log-view::-webkit-scrollbar { width: 4px; }
+  .log-view::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+  .log-entry { display: flex; gap: 10px; padding: 3px 0; font-family: var(--mono); font-size: 11px; border-bottom: 1px solid var(--border); margin-bottom: 1px; }
+  .log-time { color: var(--text3); flex-shrink: 0; }
+  .log-tag { flex-shrink: 0; padding: 0 5px; border-radius: 3px; font-size: 10px; }
+  .log-tag.info { background: var(--blue-dim); color: var(--blue); }
+  .log-tag.ok { background: var(--green-dim); color: var(--green); }
+  .log-tag.err { background: var(--red-dim); color: var(--red); }
+  .log-tag.ws { background: var(--amber-dim); color: var(--amber); }
+  .log-msg { color: var(--text2); word-break: break-all; }
+
+  /* Empty state */
+  .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; gap: 10px; color: var(--text3); }
+  .empty-icon { font-size: 36px; opacity: .3; }
+  .empty-txt { font-size: 13px; font-family: var(--mono); }
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <!-- Top bar -->
+  <div class="topbar">
+    <div class="logo">ws<span>diff</span></div>
+    <div class="conn-form">
+      <input class="conn-input" id="ws-url" type="text" placeholder="ws://localhost:8000/ws" value="ws://localhost:8000/ws" />
+      <button class="btn primary" id="conn-btn" onclick="toggleConnection()">Connect</button>
+    </div>
+    <div class="status-dot" id="status-dot"></div>
+    <div class="status-label" id="status-label">disconnected</div>
+    <button class="btn" onclick="clearAll()" style="margin-left:auto;">Clear</button>
+    <button class="btn" onclick="openDemo()" title="Run built-in demo (no server needed)">Demo mode</button>
+  </div>
+
+  <!-- Content -->
+  <div class="content">
+    <!-- Sidebar: update history -->
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-title">Updates</span>
+        <span class="badge-count" id="hist-count">0</span>
+      </div>
+      <div class="history-list" id="history-list"></div>
+      <div class="sidebar-footer">
+        <div class="stats-grid">
+          <div class="stat-cell"><div class="lbl">Added</div><div class="val green" id="tot-added">0</div></div>
+          <div class="stat-cell"><div class="lbl">Removed</div><div class="val red" id="tot-removed">0</div></div>
+          <div class="stat-cell"><div class="lbl">Changed</div><div class="val amber" id="tot-changed">0</div></div>
+          <div class="stat-cell"><div class="lbl">Messages</div><div class="val blue" id="tot-msgs">0</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main -->
+    <div class="main">
+      <div class="main-tabs">
+        <button class="mtab active" onclick="showTab('changes')">Changed fields</button>
+        <button class="mtab" onclick="showTab('diff')">Side-by-side diff</button>
+        <button class="mtab" onclick="showTab('raw')">Raw JSON</button>
+        <button class="mtab" onclick="showTab('log')">Connection log</button>
+      </div>
+
+      <!-- Changes tab -->
+      <div class="tab-content active" id="tab-changes">
+        <div class="changes-view" id="changes-view">
+          <div class="empty-state">
+            <div class="empty-icon">⚡</div>
+            <div class="empty-txt">connect to a WebSocket to start</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Diff tab -->
+      <div class="tab-content" id="tab-diff">
+        <div class="diff-panels">
+          <div class="diff-panel">
+            <div class="diff-panel-hdr">Previous payload</div>
+            <div class="diff-scroll" id="diff-prev-panel">
+              <div class="empty-state"><div class="empty-txt">—</div></div>
+            </div>
+          </div>
+          <div class="diff-panel">
+            <div class="diff-panel-hdr">Current payload</div>
+            <div class="diff-scroll" id="diff-next-panel">
+              <div class="empty-state"><div class="empty-txt">—</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Raw tab -->
+      <div class="tab-content" id="tab-raw">
+        <div class="raw-view" id="raw-view">
+          <div class="empty-state"><div class="empty-txt">—</div></div>
+        </div>
+      </div>
+
+      <!-- Log tab -->
+      <div class="tab-content" id="tab-log">
+        <div class="log-view" id="log-view"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ── State ─────────────────────────────────────── */
+let ws = null;
+let prevPayload = null;
+let history = [];
+let selectedIdx = null;
+let totAdded = 0, totRemoved = 0, totChanged = 0, totMsgs = 0;
+let demoTimer = null;
+
+/* ── WebSocket ──────────────────────────────────── */
+function toggleConnection() {
+  if (ws && ws.readyState <= 1) { ws.close(); return; }
+  stopDemo();
+  const url = document.getElementById('ws-url').value.trim();
+  if (!url) return;
+  setStatus('connecting');
+  log('info', 'Connecting to ' + url);
+  try {
+    ws = new WebSocket(url);
+    ws.onopen = () => { setStatus('connected'); log('ok', 'Connected'); document.getElementById('conn-btn').textContent = 'Disconnect'; };
+    ws.onclose = (e) => { setStatus('disconnected'); log('err', 'Disconnected (code ' + e.code + ')'); document.getElementById('conn-btn').textContent = 'Connect'; ws = null; };
+    ws.onerror = () => { setStatus('error'); log('err', 'WebSocket error'); };
+    ws.onmessage = (e) => handleMessage(e.data);
+  } catch(err) { setStatus('error'); log('err', 'Failed: ' + err.message); }
+}
+
+function setStatus(s) {
+  const dot = document.getElementById('status-dot');
+  const lbl = document.getElementById('status-label');
+  dot.className = 'status-dot ' + s;
+  lbl.textContent = s;
+}
+
+function handleMessage(raw) {
+  let parsed;
+  try { parsed = JSON.parse(raw); } catch { log('err', 'Non-JSON message: ' + raw.slice(0, 80)); return; }
+  log('ws', 'Message received (' + raw.length + ' bytes)');
+  processPayload(parsed, raw);
+}
+
+/* ── Core diff logic ────────────────────────────── */
+function deepDiff(a, b, path) {
+  path = path || '';
+  const added = [], removed = [], changed = [];
+  const keys = new Set([...Object.keys(a || {}), ...Object.keys(b || {})]);
+  for (const k of keys) {
+    const p = path ? path + '.' + k : k;
+    if (!(k in a)) { added.push({ path: p, val: b[k] }); continue; }
+    if (!(k in b)) { removed.push({ path: p, val: a[k] }); continue; }
+    const av = a[k], bv = b[k];
+    if (av !== null && bv !== null && typeof av === 'object' && typeof bv === 'object' && !Array.isArray(av)) {
+      const sub = deepDiff(av, bv, p);
+      added.push(...sub.added); removed.push(...sub.removed); changed.push(...sub.changed);
+    } else if (JSON.stringify(av) !== JSON.stringify(bv)) {
+      changed.push({ path: p, old: av, new: bv });
+    }
+  }
+  return { added, removed, changed };
+}
+
+function processPayload(parsed, raw) {
+  const diff = prevPayload ? deepDiff(prevPayload, parsed) : { added: Object.keys(parsed).map(k => ({ path: k, val: parsed[k] })), removed: [], changed: [] };
+  totMsgs++;
+  totAdded += diff.added.length;
+  totRemoved += diff.removed.length;
+  totChanged += diff.changed.length;
+  updateTotals();
+
+  const entry = { idx: history.length, ts: new Date(), prev: prevPayload ? JSON.parse(JSON.stringify(prevPayload)) : null, curr: parsed, raw, diff };
+  history.unshift(entry);
+  prevPayload = parsed;
+
+  document.getElementById('hist-count').textContent = history.length;
+  renderHistoryItem(entry, true);
+  selectEntry(0);
+}
+
+/* ── Render history sidebar ─────────────────────── */
+function renderHistoryItem(entry, prepend) {
+  const list = document.getElementById('history-list');
+  const d = entry.diff;
+  const el = document.createElement('div');
+  el.className = 'history-item' + (prepend ? ' active' : '');
+  el.dataset.idx = 0;
+  el.onclick = () => selectEntry(parseInt(el.dataset.idx));
+
+  let chips = '';
+  if (d.added.length) chips += '<span class="chip a">+' + d.added.length + ' added</span>';
+  if (d.removed.length) chips += '<span class="chip r">-' + d.removed.length + ' removed</span>';
+  if (d.changed.length) chips += '<span class="chip c">~' + d.changed.length + ' changed</span>';
+
+  const summary = d.changed.slice(0, 2).map(c => c.path.split('.').pop()).join(', ') + (d.changed.length > 2 ? '…' : '');
+
+  el.innerHTML = `
+    <div class="hist-row">
+      <span class="hist-num">#${history.length}</span>
+      <span class="hist-time">${entry.ts.toLocaleTimeString('en-SG', { hour12: false })}.${String(entry.ts.getMilliseconds()).padStart(3,'0')}</span>
+    </div>
+    <div class="hist-chips">${chips || '<span class="chip" style="background:var(--bg4);color:var(--text3)">no change</span>'}</div>
+    ${summary ? '<div class="hist-summary">' + escHtml(summary) + '</div>' : ''}
+  `;
+
+  if (prepend) {
+    list.querySelectorAll('.history-item').forEach((el, i) => {
+      el.dataset.idx = parseInt(el.dataset.idx) + 1;
+      el.classList.remove('active');
+    });
+    list.insertBefore(el, list.firstChild);
+  } else {
+    list.appendChild(el);
+  }
+}
+
+function selectEntry(idx) {
+  selectedIdx = idx;
+  document.querySelectorAll('.history-item').forEach(el => {
+    el.classList.toggle('active', parseInt(el.dataset.idx) === idx);
+  });
+  const entry = history[idx];
+  if (!entry) return;
+  renderChangesTab(entry);
+  renderDiffTab(entry);
+  renderRawTab(entry);
+}
+
+/* ── Changes tab ────────────────────────────────── */
+function renderChangesTab(entry) {
+  const { diff } = entry;
+  const view = document.getElementById('changes-view');
+  if (!diff.added.length && !diff.removed.length && !diff.changed.length) {
+    view.innerHTML = '<div class="empty-state"><div class="empty-icon">✓</div><div class="empty-txt">no changes in this update</div></div>';
+    return;
+  }
+  let html = '';
+  if (diff.changed.length) {
+    html += '<div class="section-label">Changed (' + diff.changed.length + ')</div>';
+    diff.changed.forEach(c => {
+      const oldN = typeof c.old === 'number', newN = typeof c.new === 'number';
+      const up = oldN && newN && c.new > c.old;
+      const dn = oldN && newN && c.new < c.old;
+      html += `<div class="change-row c">
+        <span class="cr-key">${escHtml(c.path)}</span>
+        <span class="cr-old">${escHtml(JSON.stringify(c.old))}</span>
+        <span class="cr-arr">→</span>
+        <span class="cr-new">${up ? '▲ ' : dn ? '▼ ' : ''}${escHtml(JSON.stringify(c.new))}</span>
+      </div>`;
+    });
+  }
+  if (diff.added.length) {
+    html += '<div class="section-label">Added (' + diff.added.length + ')</div>';
+    diff.added.forEach(a => {
+      html += `<div class="change-row a"><span class="cr-key">${escHtml(a.path)}</span><span class="cr-val g">${escHtml(JSON.stringify(a.val))}</span></div>`;
+    });
+  }
+  if (diff.removed.length) {
+    html += '<div class="section-label">Removed (' + diff.removed.length + ')</div>';
+    diff.removed.forEach(r => {
+      html += `<div class="change-row r"><span class="cr-key">${escHtml(r.path)}</span><span class="cr-val r">${escHtml(JSON.stringify(r.val))}</span></div>`;
+    });
+  }
+  view.innerHTML = html;
+}
+
+/* ── Side-by-side diff tab ──────────────────────── */
+function colorJson(obj, changedKeys, removedKeys, addedKeys) {
+  const lines = JSON.stringify(obj, null, 2).split('\n');
+  return lines.map(line => {
+    const km = line.match(/^(\s*)"([^"]+)":/);
+    const key = km ? km[2] : null;
+    let cls = '';
+    if (key) {
+      const leafPath = key;
+      if (changedKeys.has(leafPath)) cls = 'dc';
+      else if (removedKeys.has(leafPath)) cls = 'dr';
+      else if (addedKeys.has(leafPath)) cls = 'da';
+    }
+    const sign = cls === 'dc' ? '~' : cls === 'dr' ? '-' : cls === 'da' ? '+' : ' ';
+    const colored = line
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"([^"]+)":/g, '<span class="jk">"$1"</span><span class="jp">:</span>')
+      .replace(/: "([^"]*)"(,?)$/, ': <span class="js">"$1"</span><span class="jp">$2</span>')
+      .replace(/: (-?[\d.]+)(,?)$/, ': <span class="jn">$1</span><span class="jp">$2</span>')
+      .replace(/: (true|false)(,?)$/, ': <span class="jb">$1</span><span class="jp">$2</span>')
+      .replace(/: (null)(,?)$/, ': <span class="jnu">$1</span><span class="jp">$2</span>');
+    return `<div class="dl ${cls}"><span class="sgn">${sign}</span>${colored}</div>`;
+  }).join('');
+}
+
+function renderDiffTab(entry) {
+  const { prev, curr, diff } = entry;
+  const cK = new Set(diff.changed.map(x => x.path.split('.').pop()));
+  const rK = new Set(diff.removed.map(x => x.path.split('.').pop()));
+  const aK = new Set(diff.added.map(x => x.path.split('.').pop()));
+  const prevObj = prev || {};
+  document.getElementById('diff-prev-panel').innerHTML = colorJson(prevObj, cK, rK, new Set());
+  document.getElementById('diff-next-panel').innerHTML = colorJson(curr, cK, new Set(), aK);
+}
+
+/* ── Raw tab ────────────────────────────────────── */
+function renderRawTab(entry) {
+  document.getElementById('raw-view').textContent = JSON.stringify(entry.curr, null, 2);
+}
+
+/* ── Log ────────────────────────────────────────── */
+function log(tag, msg) {
+  const view = document.getElementById('log-view');
+  const d = new Date();
+  const ts = d.toLocaleTimeString('en-SG', { hour12: false }) + '.' + String(d.getMilliseconds()).padStart(3, '0');
+  const el = document.createElement('div');
+  el.className = 'log-entry';
+  el.innerHTML = `<span class="log-time">${ts}</span><span class="log-tag ${tag}">${tag.toUpperCase()}</span><span class="log-msg">${escHtml(msg)}</span>`;
+  view.appendChild(el);
+  view.scrollTop = view.scrollHeight;
+}
+
+/* ── Demo mode ──────────────────────────────────── */
+const demoBase = {
+  symbol: "RELIANCE", exchange: "NSE", price: 2850.50, open: 2830.00,
+  high: 2875.25, low: 2820.10, volume: 1245000, bid: 2850.25, ask: 2850.75,
+  ltp: 2850.50, change: 12.30, changePct: 0.433, trades: 18450,
+  buyQty: 45200, sellQty: 38900, status: "active", series: "EQ"
+};
+let demoState = JSON.parse(JSON.stringify(demoBase));
+
+function openDemo() {
+  stopDemo();
+  if (ws) { ws.close(); ws = null; }
+  prevPayload = null;
+  setStatus('connected');
+  document.getElementById('conn-btn').textContent = 'Stop demo';
+  document.getElementById('conn-btn').onclick = stopDemo;
+  log('info', 'Demo mode started (simulating NSE tick feed)');
+  function tick() {
+    const p = +(demoState.price * (1 + (Math.random() - 0.5) * 0.003)).toFixed(2);
+    const ch = +(p - demoState.open).toFixed(2);
+    const next = { ...demoState, price: p, ltp: p, change: ch,
+      changePct: +(ch / demoState.open * 100).toFixed(3),
+      volume: demoState.volume + Math.floor(Math.random() * 800),
+      bid: +(p - 0.25).toFixed(2), ask: +(p + 0.25).toFixed(2),
+      trades: demoState.trades + Math.floor(Math.random() * 12),
+      buyQty: demoState.buyQty + Math.floor((Math.random() - 0.4) * 1000),
+      sellQty: demoState.sellQty + Math.floor((Math.random() - 0.4) * 1000),
+    };
+    if (Math.random() < 0.15) next.high = Math.max(demoState.high, p);
+    if (Math.random() < 0.15) next.low = Math.min(demoState.low, p);
+    demoState = next;
+    processPayload(next, JSON.stringify(next));
+  }
+  tick();
+  demoTimer = setInterval(tick, 1200);
+}
+
+function stopDemo() {
+  if (demoTimer) { clearInterval(demoTimer); demoTimer = null; }
+  setStatus('disconnected');
+  document.getElementById('conn-btn').textContent = 'Connect';
+  document.getElementById('conn-btn').onclick = toggleConnection;
+}
+
+/* ── Helpers ────────────────────────────────────── */
+function showTab(name) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.mtab').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  event.target.classList.add('active');
+}
+
+function updateTotals() {
+  document.getElementById('tot-added').textContent = totAdded;
+  document.getElementById('tot-removed').textContent = totRemoved;
+  document.getElementById('tot-changed').textContent = totChanged;
+  document.getElementById('tot-msgs').textContent = totMsgs;
+}
+
+function clearAll() {
+  stopDemo();
+  if (ws) { ws.close(); ws = null; }
+  history = []; prevPayload = null; selectedIdx = null;
+  totAdded = totRemoved = totChanged = totMsgs = 0;
+  updateTotals();
+  document.getElementById('history-list').innerHTML = '';
+  document.getElementById('hist-count').textContent = '0';
+  document.getElementById('changes-view').innerHTML = '<div class="empty-state"><div class="empty-icon">⚡</div><div class="empty-txt">connect to a WebSocket to start</div></div>';
+  document.getElementById('diff-prev-panel').innerHTML = '<div class="empty-state"><div class="empty-txt">—</div></div>';
+  document.getElementById('diff-next-panel').innerHTML = '<div class="empty-state"><div class="empty-txt">—</div></div>';
+  document.getElementById('raw-view').innerHTML = '<div class="empty-state"><div class="empty-txt">—</div></div>';
+  document.getElementById('log-view').innerHTML = '';
+  setStatus('disconnected');
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>
